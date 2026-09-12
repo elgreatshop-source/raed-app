@@ -1,0 +1,9 @@
+{
+	"appId": "ma.raed.professeur",
+	"appName": "رائد | مساعد الأستاذ",
+	"webDir": "dist",
+	"bundledWebRuntime": false,
+	"server": {
+		"androidScheme": "https"
+	}
+}
