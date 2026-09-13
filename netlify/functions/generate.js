@@ -1,4 +1,4 @@
-const { GoogleGenAI, Type } = require('@google/genai');
+import { GoogleGenAI, Type } from '@google/genai';
 
 function sanitizeInput(str) {
   if (typeof str !== 'string') return '';
@@ -9,7 +9,7 @@ function getGeminiClient(apiKey) {
   return new GoogleGenAI({ apiKey });
 }
 
-exports.handler = async function(event, context) {
+export const handler = async (event, context) => {
   // إعدادات CORS للسماح للواجهة بالاتصال
   if (event.httpMethod === "OPTIONS") {
     return {
@@ -31,7 +31,7 @@ exports.handler = async function(event, context) {
   if (!API_KEY) {
     return { 
       statusCode: 500, 
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
       body: JSON.stringify({ success: false, error: "مفتاح API مفقود في إعدادات المنصة" }) 
     };
   }
@@ -113,7 +113,7 @@ exports.handler = async function(event, context) {
     console.error('Serverless Error:', error);
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
       body: JSON.stringify({ success: false, error: "حدث خطأ أثناء معالجة الدروس بالذكاء الاصطناعي." })
     };
   }
