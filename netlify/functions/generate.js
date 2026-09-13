@@ -1,93 +1,47 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
-function sanitizeInput(str) {
-  if (typeof str !== 'string') return '';
-  return str.replace(/<[^>]+>/g, '').trim().slice(0, 15000);
-}
+export const handler = async (event) => {
+  // 1. إعدادات الأمان والسماح للواجهة بالاتصال
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS"
+  };
 
-function getGeminiClient(apiKey) {
-  return new GoogleGenAI({ apiKey });
-}
-
-export const handler = async (event, context) => {
-  // إعدادات CORS للسماح للواجهة بالاتصال
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
-      body: ""
-    };
-  }
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
-  const API_KEY = process.env.GEMINI_API_KEY;
-  if (!API_KEY) {
-    return { 
-      statusCode: 500, 
-      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-      body: JSON.stringify({ success: false, error: "مفتاح API مفقود في إعدادات المنصة" }) 
-    };
+    return { statusCode: 200, headers, body: "" };
   }
 
   try {
-    const ai = getGeminiClient(API_KEY);
-    const body = JSON.parse(event.body);
-
-    const {
-      phase, date, dayName, teacherProfile,
-      arabicLessonInput, mathLessonInput, frenchLessonInput, customInstructions,
-      imagesBase64, documentsText, timetable
-    } = body;
-
-    const cleanDate = sanitizeInput(date) || new Date().toISOString().split('T')[0];
-    const cleanDayName = sanitizeInput(dayName) || 'اليوم الدراسي';
-    
-    // استخراج بيانات الأستاذ
-    const profile = {
-      level: sanitizeInput(teacherProfile?.level) || 'المستوى الرابع',
-      classGroup: sanitizeInput(teacherProfile?.classGroup) || '1',
-      teachingMode: sanitizeInput(teacherProfile?.teachingMode) || 'bilingual',
-    };
-
-    const promptText = `
-أنت خبير بيداغوجي ومفتش تربوي متخصص في مقاربة "مدارس الريادة" بالمغرب.
-المطلوب تحليل الوثائق بدقة وبناء خطاطات ذهنية ومذكرة يومية موحدة.
-معلومات الأستاذ:
-- التاريخ: ${cleanDate} (${cleanDayName})
-- المستوى: ${profile.level} - الفوج: ${profile.classGroup} - النمط: ${profile.teachingMode}
-معطيات الدروس:
-- العربية: ${sanitizeInput(arabicLessonInput)}
-- الرياضيات: ${sanitizeInput(mathLessonInput)}
-- الفرنسية: ${sanitizeInput(frenchLessonInput)}
-توجيهات إضافية: ${sanitizeInput(customInstructions)}
-قم بتوليد JSON منسق بدقة ليتم عرضه في التطبيق.`;
-
-    const parts = [];
-    if (imagesBase64 && Array.isArray(imagesBase64) && imagesBase64.length > 0) {
-      const safeImages = imagesBase64.slice(0, 10);
-      for (const img of safeImages) {
-        if (img?.data && img?.mimeType) {
-          parts.push({
-            inlineData: {
-              data: img.data.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, ''),
-              mimeType: img.mimeType,
-            },
-          });
-        }
-      }
+    // 2. التحقق من المفتاح السري
+    const API_KEY = process.env.GEMINI_API_KEY;
+    if (!API_KEY) {
+      return { 
+        statusCode: 200, 
+        headers, 
+        body: JSON.stringify({ success: false, error: "مفتاح API مفقود في Netlify." }) 
+      };
     }
-    parts.push({ text: promptText });
 
+    // 3. قراءة البيانات المرسلة من التطبيق
+    const body = JSON.parse(event.body || "{}");
+
+    // 4. تجهيز النص للذكاء الاصطناعي
+    const promptText = `
+    أنت خبير بيداغوجي في مقاربة "مدارس الريادة" بالمغرب.
+    قم بتوليد JSON منسق بدقة وفق الـ Schema المطلوبة ليتم عرضه في التطبيق.
+    معطيات الدرس:
+    العربية: ${body.arabicLessonInput || 'لم يتم الإدخال'}
+    الرياضيات: ${body.mathLessonInput || 'لم يتم الإدخال'}
+    الفرنسية: ${body.frenchLessonInput || 'لم يتم الإدخال'}
+    التوجيهات: ${body.customInstructions || 'بدون توجيهات'}
+    `;
+
+    // 5. الاتصال بجوجل (باستخدام النموذج المستقر 1.5)
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: { parts },
+      model: 'gemini-1.5-flash',
+      contents: promptText,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -103,18 +57,20 @@ export const handler = async (event, context) => {
       }
     });
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ success: true, data: JSON.parse(response.text || '{}') })
+    // 6. إعادة النتيجة بنجاح للتطبيق
+    return { 
+      statusCode: 200, 
+      headers, 
+      body: JSON.stringify({ success: true, data: JSON.parse(response.text || '{}') }) 
     };
 
   } catch (error) {
-    console.error('Serverless Error:', error);
-    return {
-      statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-      body: JSON.stringify({ success: false, error: "حدث خطأ أثناء معالجة الدروس بالذكاء الاصطناعي." })
+    // 7. في حال حدوث أي خطأ، سنلتقطه هنا لمنع انهيار الخادم
+    console.error(error);
+    return { 
+      statusCode: 200, 
+      headers, 
+      body: JSON.stringify({ success: false, error: "رسالة الخطأ: " + error.message }) 
     };
   }
 };
